@@ -54,35 +54,33 @@ def render_video(req: RenderRequest):
 
         out_w = 1920
         out_h = 1080
+        fps = 24
+
         scaled_h = int(img_h * (out_w / img_w))
         scroll_dist = max(0, scaled_h - out_h)
+        scroll_speed = scroll_dist / duration if duration > 0 else 0
 
         output_path = os.path.join(tmp, req.output_filename)
 
-        filter_complex = (
-            f"[0:v]scale={out_w}:-1[scaled];"
-            f"[scaled]crop={out_w}:{out_h}:0:'if(gte(t,{duration}),{scroll_dist},t/{duration}*{scroll_dist})'[cropped]"
-        )
+        filter_str = f"scale={out_w}:-1,scroll=vertical=1:v={scroll_speed}/{fps}:h={out_h}"
 
         cmd = [
             "ffmpeg", "-y",
-            "-loop", "1", "-i", img_path,
+            "-loop", "1", "-framerate", str(fps), "-i", img_path,
             "-i", audio_path,
-            "-filter_complex", filter_complex,
-            "-map", "[cropped]",
+            "-vf", filter_str,
+            "-map", "0:v",
             "-map", "1:a",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
             "-c:a", "aac", "-b:a", "128k",
-            "-r", "24",
             "-t", str(duration),
             "-pix_fmt", "yuv420p",
-            "-shortest",
             output_path
         ]
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if result.returncode != 0:
-            raise HTTPException(500, f"FFmpeg error: {result.stderr[-2000:]}")
+            raise HTTPException(500, f"FFmpeg error: {result.stderr[-3000:]}")
 
         with open(output_path, "rb") as f:
             video_data = f.read()
