@@ -5,6 +5,7 @@ import requests
 import tempfile
 import os
 import json
+import math
 
 app = FastAPI()
 
@@ -55,14 +56,18 @@ def render_video(req: RenderRequest):
         out_w = 1920
         out_h = 1080
         fps = 24
+        total_frames = math.ceil(duration * fps)
 
-        scaled_h = int(img_h * (out_w / img_w))
+        scaled_h = int(img_h * out_w / img_w)
         scroll_dist = max(0, scaled_h - out_h)
-        scroll_speed = scroll_dist / duration if duration > 0 else 0
+        px_per_frame = scroll_dist / total_frames if total_frames > 0 else 0
 
         output_path = os.path.join(tmp, req.output_filename)
 
-        filter_str = f"scale={out_w}:-1,scroll=vertical=1:v={scroll_speed}/{fps}:h={out_h}"
+        filter_str = (
+            f"scale={out_w}:-1,"
+            f"crop={out_w}:{out_h}:0:'min(n*{px_per_frame},{scroll_dist})'"
+        )
 
         cmd = [
             "ffmpeg", "-y",
