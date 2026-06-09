@@ -1,9 +1,11 @@
-FROM jrottenberg/ffmpeg:4.4-alpine
+FROM python:3.11-slim
 
-RUN apk add --no-cache python3 py3-pip
-RUN pip3 install fastapi uvicorn requests supabase
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
 COPY . .
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
