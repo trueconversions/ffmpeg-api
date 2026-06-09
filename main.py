@@ -6,6 +6,7 @@ import tempfile
 import os
 import json
 import math
+import base64
 
 app = FastAPI()
 
@@ -20,6 +21,51 @@ class RenderRequest(BaseModel):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+def write_cursor_png(path: str):
+    import struct, zlib
+    w, h = 16, 16
+    arrow = [
+        "BBBBBBBBBBBBBBBB",
+        "BWWbbbbbbbbbbbbb",
+        "BWWWbbbbbbbbbbbb",
+        "BWWWWbbbbbbbbbbb",
+        "BWWWWWbbbbbbbbbb",
+        "BWWWWWWbbbbbbbbb",
+        "BWWWWWWWbbbbbbbb",
+        "BWWWWWWWWbbbbbbb",
+        "BWWWWWWWWWbbbbbb",
+        "BWWWWWWWWWWbbbbb",
+        "BWWWWWWWWWWWbbbb",
+        "BWWWWWWWWbbbbbbb",
+        "BWWWbWWWbbbbbbbbb",
+        "BWWbbBWWbbbbbbbbb",
+        "BBbbbBWWbbbbbbbbb",
+        "bbbbbbbbbbbbbbbbb",
+    ]
+    color_map = {
+        'B': (0, 0, 0, 255),
+        'W': (255, 255, 255, 255),
+        'b': (0, 0, 0, 0),
+    }
+    raw = b''
+    for row in arrow[:h]:
+        raw += b'\x00'
+        for char in row[:w]:
+            raw += bytes(color_map.get(char, (0,0,0,0)))
+
+    def chunk(tag, data):
+        c = tag + data
+        return struct.pack('>I', len(data)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+
+    png = (
+        b'\x89PNG\r\n\x1a\n'
+        + chunk(b'IHDR', struct.pack('>II', w, h) + bytes([8, 6, 0, 0, 0]))
+        + chunk(b'IDAT', zlib.compress(raw, 9))
+        + chunk(b'IEND', b'')
+    )
+    with open(path, 'wb') as f:
+        f.write(png)
 
 @app.post("/render")
 def render_video(req: RenderRequest):
@@ -37,6 +83,9 @@ def render_video(req: RenderRequest):
             raise HTTPException(500, f"Failed to download audio: {r.status_code}")
         with open(audio_path, "wb") as f:
             f.write(r.content)
+
+        cursor_path = os.path.join(tmp, "cursor.png")
+        write_cursor_png(cursor_path)
 
         probe_img = subprocess.run([
             "ffprobe", "-v", "quiet", "-print_format", "json",
@@ -62,19 +111,26 @@ def render_video(req: RenderRequest):
         scroll_dist = max(0, scaled_h - out_h)
         px_per_frame = scroll_dist / total_frames if total_frames > 0 else 0
 
+        cursor_x = out_w // 2 + 200
+
         output_path = os.path.join(tmp, req.output_filename)
 
         filter_str = (
-            f"scale={out_w}:-1,"
-            f"crop={out_w}:{out_h}:0:'min(n*{px_per_frame},{scroll_dist})'"
+            f"[0:v]scale={out_w}:-1,"
+            f"crop={out_w}:{out_h}:0:'min(n*{px_per_frame},{scroll_dist})'[scrolled];"
+            f"[2:v]scale=32:32[cursor];"
+            f"[scrolled][cursor]overlay="
+            f"x={cursor_x}:"
+            f"y='({out_h}/2)-16+sin(n*0.3)*30'[out]"
         )
 
         cmd = [
             "ffmpeg", "-y",
             "-loop", "1", "-framerate", str(fps), "-i", img_path,
             "-i", audio_path,
-            "-vf", filter_str,
-            "-map", "0:v",
+            "-loop", "1", "-framerate", str(fps), "-i", cursor_path,
+            "-filter_complex", filter_str,
+            "-map", "[out]",
             "-map", "1:a",
             "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
             "-c:a", "aac", "-b:a", "128k",
