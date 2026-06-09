@@ -6,7 +6,6 @@ import tempfile
 import os
 import json
 import math
-import base64
 
 app = FastAPI()
 
@@ -24,32 +23,48 @@ def health():
 
 def write_cursor_png(path: str):
     import struct, zlib
-    w, h = 16, 16
-    arrow = [
-        "BBBBBBBBBBBBBBBB",
-        "BWWbbbbbbbbbbbbb",
-        "BWWWbbbbbbbbbbbb",
-        "BWWWWbbbbbbbbbbb",
-        "BWWWWWbbbbbbbbbb",
-        "BWWWWWWbbbbbbbbb",
-        "BWWWWWWWbbbbbbbb",
-        "BWWWWWWWWbbbbbbb",
-        "BWWWWWWWWWbbbbbb",
-        "BWWWWWWWWWWbbbbb",
-        "BWWWWWWWWWWWbbbb",
-        "BWWWWWWWWbbbbbbb",
-        "BWWWbWWWbbbbbbbbb",
-        "BWWbbBWWbbbbbbbbb",
-        "BBbbbBWWbbbbbbbbb",
-        "bbbbbbbbbbbbbbbbb",
+    w, h = 32, 32
+    shape = [
+        "22000000000000000000000000000000",
+        "21200000000000000000000000000000",
+        "21120000000000000000000000000000",
+        "21112000000000000000000000000000",
+        "21111200000000000000000000000000",
+        "21111120000000000000000000000000",
+        "21111112000000000000000000000000",
+        "21111111200000000000000000000000",
+        "21111111120000000000000000000000",
+        "21111111112000000000000000000000",
+        "21111111111200000000000000000000",
+        "21111111111120000000000000000000",
+        "21111111111112000000000000000000",
+        "21111111111111200000000000000000",
+        "21111111111111120000000000000000",
+        "21111111111111112000000000000000",
+        "21111111222222220000000000000000",
+        "21111112211120000000000000000000",
+        "21111221211120000000000000000000",
+        "21112201211120000000000000000000",
+        "21122000211120000000000000000000",
+        "21220000211120000000000000000000",
+        "22000000211120000000000000000000",
+        "20000000211120000000000000000000",
+        "00000000211120000000000000000000",
+        "00000000211120000000000000000000",
+        "00000000211120000000000000000000",
+        "00000000022220000000000000000000",
+        "00000000000000000000000000000000",
+        "00000000000000000000000000000000",
+        "00000000000000000000000000000000",
+        "00000000000000000000000000000000",
     ]
     color_map = {
-        'B': (0, 0, 0, 255),
-        'W': (255, 255, 255, 255),
-        'b': (0, 0, 0, 0),
+        '1': (0, 0, 0, 255),
+        '2': (255, 255, 255, 220),
+        '0': (0, 0, 0, 0),
     }
     raw = b''
-    for row in arrow[:h]:
+    for row in shape[:h]:
         raw += b'\x00'
         for char in row[:w]:
             raw += bytes(color_map.get(char, (0,0,0,0)))
@@ -111,17 +126,29 @@ def render_video(req: RenderRequest):
         scroll_dist = max(0, scaled_h - out_h)
         px_per_frame = scroll_dist / total_frames if total_frames > 0 else 0
 
-        cursor_x = out_w // 2 + 200
+        cursor_base_x = out_w // 2 + 180
+        cursor_base_y = out_h // 2
 
-        output_path = os.path.join(tmp, req.output_filename)
+        cursor_x_expr = (
+            f"{cursor_base_x}"
+            f"+sin(n*0.023)*40"
+            f"+sin(n*0.051)*25"
+            f"+sin(n*0.077)*15"
+        )
+        cursor_y_expr = (
+            f"{cursor_base_y}"
+            f"+sin(n*0.031)*35"
+            f"+sin(n*0.059)*20"
+            f"+sin(n*0.083)*12"
+        )
 
         filter_str = (
             f"[0:v]scale={out_w}:-1,"
             f"crop={out_w}:{out_h}:0:'min(n*{px_per_frame},{scroll_dist})'[scrolled];"
-            f"[2:v]scale=32:32[cursor];"
+            f"[2:v]scale=40:40[cursor];"
             f"[scrolled][cursor]overlay="
-            f"x={cursor_x}:"
-            f"y='({out_h}/2)-16+sin(n*0.3)*30'[out]"
+            f"x='{cursor_x_expr}':"
+            f"y='{cursor_y_expr}'[out]"
         )
 
         cmd = [
@@ -136,7 +163,7 @@ def render_video(req: RenderRequest):
             "-c:a", "aac", "-b:a", "128k",
             "-t", str(duration),
             "-pix_fmt", "yuv420p",
-            output_path
+            output_path := os.path.join(tmp, req.output_filename)
         ]
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
