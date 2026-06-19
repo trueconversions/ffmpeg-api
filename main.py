@@ -158,7 +158,7 @@ def render_video(req: RenderRequest):
             output_path := os.path.join(tmp, req.output_filename)
         ]
 
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         if result.returncode != 0:
             raise HTTPException(500, f"FFmpeg error: {result.stderr[-3000:]}")
 
