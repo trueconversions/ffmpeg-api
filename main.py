@@ -151,7 +151,7 @@ def render_video(req: RenderRequest):
             "-filter_complex", filter_str,
             "-map", "[out]",
             "-map", "1:a",
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+            "-c:v", "libx264", "-preset", "ultrafast",'-threads', '2', "-crf", "23",
             "-c:a", "aac", "-b:a", "128k",
             "-t", str(duration),
             "-pix_fmt", "yuv420p",
